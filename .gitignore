@@ -1,0 +1,17 @@
+# Arquivos de configuração e Tokens (Sensível)
+*.json
+
+# Banco de Dados SQLite e Backups
+*.db
+backups/
+
+# Dados baixados ou gerados localmente
+mega_sena.xlsx
+meus_jogos.txt
+*.pdf
+*.csv
+
+# Arquivos temporários e compilados do Python
+__pycache__/
+*.pyc
+*.pyo

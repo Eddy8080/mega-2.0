@@ -1,0 +1,7 @@
+cupy-cuda12x
+jax[cuda12]
+pandas
+google-genai
+matplotlib
+openpyxl
+reportlab
