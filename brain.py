@@ -1869,8 +1869,13 @@ class Brain:
         """Abre o arquivo de sugestões salvas no editor padrão."""
         arquivo = os.path.join(os.path.dirname(__file__), 'meus_jogos.txt')
         if not os.path.exists(arquivo):
-            print(" >> Arquivo 'meus_jogos.txt' ainda não existe.")
-            return
+            print(" >> Arquivo 'meus_jogos.txt' não encontrado. Criando arquivo vazio...")
+            try:
+                with open(arquivo, 'w', encoding='utf-8') as f:
+                    f.write("--- Histórico de Palpites ---\n")
+            except Exception as e:
+                print(f" >> Erro ao criar arquivo: {e}")
+                return
         
         try:
             os.startfile(arquivo)
