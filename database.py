@@ -143,23 +143,60 @@ class DatabaseManager:
             return cursor.fetchall()
 
     def verificar_integridade(self):
-        """Verifica a integridade do banco de dados e estrutura."""
+        """Verifica a integridade do arquivo, estrutura e realiza AUDITORIA das dezenas."""
         try:
             if not os.path.exists(self.db_path):
                 self.create_tables()
-                return True, "Banco de dados não existia e foi criado com sucesso."
+                return True, "Banco de dados não existia. Novo arquivo criado e tabelas inicializadas."
 
+            erros = []
             with self.get_connection() as conn:
                 cursor = conn.cursor()
+                
+                # 1. Integridade Física do SQLite
                 cursor.execute("PRAGMA integrity_check")
                 result = cursor.fetchone()
+                if not result or result[0] != 'ok':
+                    erros.append(f"Erro físico no SQLite: {result[0]}")
 
-                # Garante que as tabelas existem (correção estrutural)
+                # 2. Garantir Estrutura de Tabelas
                 self.create_tables()
 
-                if result and result[0] == 'ok':
-                    return True, "Integridade do arquivo: OK. Estrutura de tabelas validada."
-                else:
-                    return False, f"Corrupção detectada no arquivo: {result[0]}"
+                # 3. Auditoria Semântica dos Sorteios
+                cursor.execute("SELECT concurso, bola1, bola2, bola3, bola4, bola5, bola6 FROM sorteios")
+                rows = cursor.fetchall()
+                
+                if not rows:
+                    return True, "Estrutura física OK, mas o banco de dados está vazio (sem sorteios para validar)."
+
+                for row in rows:
+                    conc = row[0]
+                    dezenas = [d for d in row[1:] if d is not None]
+                    
+                    # Verificar se há dezenas faltando (devem ser 6)
+                    if len(dezenas) != 6:
+                        erros.append(f"Concurso {conc}: Contém apenas {len(dezenas)} dezenas (esperado: 6).")
+                        continue
+                    
+                    # Verificar dezenas nulas ou zeradas
+                    if any(v == 0 for v in dezenas):
+                        erros.append(f"Concurso {conc}: Contém dezenas zeradas.")
+                    
+                    # Verificar se as dezenas estão entre 1 e 60
+                    if any(v < 1 or v > 60 for v in dezenas):
+                        erros.append(f"Concurso {conc}: Dezenas fora do intervalo 1-60 -> {dezenas}")
+                    
+                    # Verificar números repetidos no mesmo sorteio
+                    if len(set(dezenas)) != 6:
+                        erros.append(f"Concurso {conc}: Contém dezenas duplicadas -> {dezenas}")
+
+            if erros:
+                msg = f"Inconsistências detectadas ({len(erros)} erro(s)):\n"
+                msg += "\n".join(erros[:10]) # Mostra os primeiros 10 erros
+                if len(erros) > 10: msg += f"\n... e mais {len(erros)-10} erros."
+                return False, msg
+            
+            return True, f"Integridade Total: OK.\n >> {len(rows)} sorteios auditados individualmente.\n >> Nenhuma duplicata ou dezena fora de range encontrada."
+
         except Exception as e:
-            return False, f"Erro durante verificação: {e}"
+            return False, f"Erro crítico durante a auditoria: {e}"

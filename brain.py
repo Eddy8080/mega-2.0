@@ -67,6 +67,7 @@ class Brain:
         # Inicializa cliente Gemini
         self.client = None
         self.reconfigurar_api(self.api_token, self.model_name)
+        self.jogos_elite = [] # Armazena os 4 jogos de elite (6 dezenas cada)
 
         if not self.db_manager.obter_ultimo_sorteio():
             importar_dados()
@@ -238,14 +239,162 @@ class Brain:
 
     def abrir_meus_jogos(self): os.startfile('meus_jogos.txt')
     def abrir_arquivo_excel(self): os.startfile('mega_sena.xlsx')
-    def verificar_integridade_banco(self): return self.db_manager.verificar_integridade()
+    def verificar_integridade_banco(self):
+        """Executa auditoria profunda e imprime relatório no log."""
+        print("SISTEMA: Iniciando Auditoria de Integridade de Dados...")
+        sucesso, mensagem = self.db_manager.verificar_integridade()
+        
+        status = "CONCLUÍDA COM SUCESSO" if sucesso else "FALHAS ENCONTRADAS"
+        print(f"\n[RELATÓRIO DE AUDITORIA - {status}]")
+        print(f"{mensagem}\n")
+        return sucesso, mensagem
     def gerar_relatorio_pdf(self, c=None): 
         print("PDF: Gerando Relatório Técnico..."); return True
-    def analisar_atrasos(self): print("Estatística: Analisando atrasos via Hardware...")
-    def analisar_pares_impares(self): print("Estatística: Analisando paridade...")
-    def gerar_grafico_frequencia(self): 
-        plt.figure(); plt.bar(range(1,61), np.random.rand(60)); plt.show()
-    def analisar_quadrantes(self): print("Análise Espacial: Quadrantes ativos.")
-    def analisar_soma_dezenas(self): print("Matemática: Somas calculadas.")
-    def analisar_ciclos(self): print("Probabilidade: Ciclos analisados.")
+
+    def gerar_grafico_frequencia(self, render_callback=None):
+        """Prepara os dados de frequência. Se houver um callback, envia para renderização."""
+        print("Estatística: Processando dados de frequência real...")
+        todos = self.db_manager.obter_todos_sorteios()
+        if not todos:
+            print(" >> Erro: Sem dados para gerar gráfico.")
+            return
+
+        contagem = {i: 0 for i in range(1, 61)}
+        for s in todos:
+            for n in s[1:]:
+                contagem[n] += 1
+        
+        dezenas = list(contagem.keys())
+        frequencias = list(contagem.values())
+
+        if render_callback:
+            render_callback(dezenas, frequencias)
+        else:
+            # Fallback caso não venha da interface (não recomendado para threads)
+            self._renderizar_grafico_interno(dezenas, frequencias)
+
+    def _renderizar_grafico_interno(self, dezenas, frequencias):
+        """Lógica interna de plotagem (deve ser chamada na thread principal)."""
+        try:
+            plt.close('all')
+            plt.figure(figsize=(10, 5))
+            plt.bar(dezenas, frequencias, color='#2196F3')
+            plt.title('Frequência Histórica Real')
+            plt.xlabel('Dezena')
+            plt.ylabel('Vezes Sorteada')
+            plt.xticks(range(1, 61, 5))
+            plt.grid(axis='y', alpha=0.3)
+            plt.tight_layout()
+            plt.show()
+        except Exception as e:
+            print(f" >> Erro na renderização: {e}")
+
+    def analisar_quadrantes(self):
+        """Analisa a distribuição espacial real."""
+        print("Análise Espacial: Distribuição nos Quadrantes...")
+        todos = self.db_manager.obter_todos_sorteios()
+        if not todos: return
+
+        q1, q2, q3, q4 = 0, 0, 0, 0
+        for s in todos:
+            for n in s[1:]:
+                col = (n-1) % 10
+                row = (n-1) // 10
+                if row < 3:
+                    if col < 5: q1 += 1
+                    else: q2 += 1
+                else:
+                    if col < 5: q3 += 1
+                    else: q4 += 1
+        
+        total = q1 + q2 + q3 + q4
+        print(f" >> Ocorrências por Quadrante:")
+        print(f"    Q1 (Top-Left): {q1} ({(q1/total*100):.1f}%)")
+        print(f"    Q2 (Top-Right): {q2} ({(q2/total*100):.1f}%)")
+        print(f"    Q3 (Bottom-Left): {q3} ({(q3/total*100):.1f}%)")
+        print(f"    Q4 (Bottom-Right): {q4} ({(q4/total*100):.1f}%)")
+
+    def simular_cenarios(self, qtd=1000000, callback=None):
+        """Simulação de Monte Carlo para validar a Lei dos Grandes Números."""
+        print(f"Brain: Iniciando Simulação de Monte Carlo com {qtd:,} cenários...")
+        s = time.time()
+        
+        # Gera números aleatórios em massa
+        if HAS_CUPY:
+            dados = cp.random.randint(1, 61, size=(qtd, 6))
+            # Simula a verificação de frequência na GPU
+            contagem = cp.histogram(dados, bins=range(1, 62))[0]
+            contagem_final = cp.asnumpy(contagem)
+        else:
+            dados = np.random.randint(1, 61, size=(qtd, 6))
+            contagem_final = np.histogram(dados, bins=range(1, 62))[0]
+        
+        tempo = time.time() - s
+        print(f" >> Simulação Concluída em {tempo:.2f}s.")
+        print(" >> Resultados Estocásticos (Top 5 mais sorteados na simulação):")
+        top5 = np.argsort(contagem_final)[-5:][::-1]
+        for i, idx in enumerate(top5):
+            print(f"    {i+1}º: Dezena {idx+1} (Sorteada {contagem_final[idx]:,} vezes)")
+        
+        # Gera 4 JOGOS DE ELITE (6 dezenas cada) baseados no Top 15 da simulação
+        top_elite = [int(idx+1) for idx in np.argsort(contagem_final)[-15:][::-1]]
+        self.jogos_elite = []
+        for _ in range(4):
+            # Seleciona 6 números únicos do pool de 15 melhores
+            jogo = sorted(np.random.choice(top_elite, 6, replace=False).tolist())
+            self.jogos_elite.append(jogo)
+        
+        if callback: callback(qtd, qtd)
+
+    def analisar_atrasos(self):
+        """Analisa e exibe o ranking de atrasos real."""
+        print("Estatística: Analisando atrasos (Hardware Processing)...")
+        ranking = self._obter_ranking_importado()
+        if not ranking:
+            print(" >> Erro: Base de dados vazia ou Excel não processado.")
+            return
+            
+        print(" >> DEZENAS MAIS ATRASADAS (Dias/Concursos sem sair):")
+        # O ranking importado já tem a coluna 'Mais atrasadas'
+        atrasadas = [item.get('Mais Atrasadas') for item in ranking[:10]]
+        print(f"    Top 10: {', '.join(map(str, atrasadas))}")
+
+    def analisar_pares_impares(self):
+        """Exibe a paridade real dos últimos sorteios."""
+        print("Estatística: Analisando paridade e equilíbrio...")
+        todos = self.db_manager.obter_todos_sorteios()
+        if not todos: return
+
+        p, i = 0, 0
+        for s in todos[:50]: # Analisa os últimos 50
+            for n in s[1:]:
+                if n % 2 == 0: p += 1
+                else: i += 1
+        
+        total = p + i
+        print(f" >> Tendência nos últimos 50 sorteios: {p} Pares vs {i} Ímpares")
+        print(f" >> Percentual: {(p/total)*100:.1f}% Pares | {(i/total)*100:.1f}% Ímpares")
+
+    def analisar_ciclos(self):
+        """Calcula o ciclo atual (quantas faltam para fechar o globo)."""
+        print("Probabilidade: Analisando Ciclos de Dezenas...")
+        todos = self.db_manager.obter_todos_sorteios()
+        if not todos: return
+
+        vistos = set()
+        faltantes = set(range(1, 61))
+        concursos = 0
+        
+        for s in todos:
+            concursos += 1
+            for n in s[1:]:
+                if n in faltantes:
+                    faltantes.remove(n)
+            if not faltantes: break
+            
+        if faltantes:
+            print(f" >> Ciclo Atual: Faltam {len(faltantes)} dezenas para completar o globo.")
+            print(f" >> Dezenas que ainda não saíram no ciclo: {sorted(list(faltantes))}")
+        else:
+            print(f" >> Ciclo Fechado: Foram necessários {concursos} concursos para sortear todas as 60 dezenas.")
     def gerar_palpite_ia(self): return self.interagir_hibrido("Sugira um jogo baseado em probabilidades estatísticas.")

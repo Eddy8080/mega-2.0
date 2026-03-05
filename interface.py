@@ -54,13 +54,13 @@ class Interface:
 
         cats = [
             ("1. Gestão de Dados", [
-                ("Importar Sorteios", self.importar_padrao),
+                ("Importar Jogos Reais", self.importar_padrao),
                 ("Abrir mega_sena.xlsx", safe(lambda: self.brain.abrir_arquivo_excel())),
                 ("Conferir Resultado", self.solicitar_conferencia),
                 ("Integridade do Banco", safe(lambda: self.brain.verificar_integridade_banco())),
             ]),
             ("2. Análises Estatísticas", [
-                ("Frequência Real", safe(lambda: self.brain.gerar_grafico_frequencia())),
+                ("Frequência Real", self.solicitar_grafico_frequencia),
                 ("Atrasos e Frios", safe(lambda: self.brain.analisar_atrasos())),
                 ("Paridade e Quadrantes", safe(lambda: self.brain.analisar_pares_impares())),
                 ("Ciclos de Dezenas", safe(lambda: self.brain.analisar_ciclos())),
@@ -69,6 +69,7 @@ class Interface:
             ]),
             ("3. Geração Híbrida", [
                 ("GERAR PALPITES HÍBRIDOS", safe(lambda: self.brain.pensar_jogos())),
+                ("4 JOGOS DE ELITE (Pós-Simulação)", self.mostrar_jogos_elite),
                 ("Ver Meus Jogos (.txt)", safe(lambda: self.brain.abrir_meus_jogos())),
             ]),
             ("4. Especialista IA", [
@@ -209,16 +210,76 @@ class Interface:
         self.progress['maximum'] = t; self.progress['value'] = a; self.root.update_idletasks()
 
     def solicitar_conferencia(self):
-        e = simpledialog.askstring("Resultado", "Números (espaço):")
+        e = simpledialog.askstring("Resultado", "Números (espaço ou hífen):")
         if e:
             try:
-                nums = [int(x) for x in e.split() if x.isdigit()]
+                # Normaliza a entrada substituindo hífens por espaços
+                e_normalizada = e.replace('-', ' ')
+                nums = [int(x) for x in e_normalizada.split() if x.isdigit()]
                 if len(nums) >= 6: self._acao_segura(lambda: self.brain.conferir_resultado(nums[:6]))
             except: pass
 
     def importar_padrao(self):
-        from importar_dados import importar_dados
-        self._acao_segura(lambda: importar_dados(None, self.atualizar_barra_progresso))
+        escolha = messagebox.askyesnocancel(
+            "Método de Importação",
+            "Deseja importar de um ARQUIVO (Sim)\nou DIGITAR dezenas manualmente (Não)?\n(Cancelar para sair)"
+        )
+        
+        if escolha is True: # Arquivo
+            arquivo = filedialog.askopenfilename(
+                title="Selecionar Jogos Reais",
+                filetypes=[("Arquivos de Dados", "*.xlsx *.csv"), ("Todos os arquivos", "*.*")]
+            )
+            from importar_dados import importar_dados
+            if arquivo:
+                self._acao_segura(lambda: importar_dados(arquivo, self.atualizar_barra_progresso))
+            else:
+                if messagebox.askyesno("Importação", "Nenhum arquivo selecionado. Deseja baixar a base oficial?"):
+                    self._acao_segura(lambda: importar_dados(None, self.atualizar_barra_progresso))
+        
+        elif escolha is False: # Manual
+            ultimo = self.brain.db_manager.obter_ultimo_sorteio()
+            prox_conc = (ultimo['concurso'] + 1) if ultimo else 1
+            
+            msg = f"Lançando Concurso {prox_conc}\n\nDigite as 6 dezenas (espaço ou hífen):"
+            entrada = simpledialog.askstring("Importação Manual Inteligente", msg)
+            
+            if entrada:
+                try:
+                    # Normaliza a entrada substituindo hífens por espaços
+                    entrada_normalizada = entrada.replace('-', ' ')
+                    nums = [int(x) for x in entrada_normalizada.split() if x.isdigit()]
+                    if len(nums) >= 6:
+                        # Chama a lógica do brain que já salva e atualiza o Excel de forma inteligente
+                        self._acao_segura(lambda: self.brain.conferir_resultado(nums[:6]))
+                        messagebox.showinfo("Sucesso", f"Concurso {prox_conc} adicionado e Excel atualizado!")
+                    else:
+                        messagebox.showwarning("Erro", "Digite pelo menos 6 números válidos.")
+                except Exception as e:
+                    messagebox.showerror("Erro", f"Falha ao processar entrada: {e}")
+
+    def mostrar_jogos_elite(self):
+        """Exibe os 4 jogos de elite calculados pela última simulação."""
+        jogos = self.brain.jogos_elite
+        if not jogos:
+            messagebox.showwarning("Aviso", "Execute uma 'Simulação Monte Carlo' primeiro para habilitar estes jogos.")
+            return
+        
+        msg = "4 JOGOS DE ELITE (Filtro Estocástico):\n\n"
+        for i, jogo in enumerate(jogos):
+            msg += f"Jogo {i+1}: {jogo}\n"
+            
+        msg += f"\nEstes jogos foram compostos a partir das 15 dezenas que mais 'performaram' na simulação de {self.progress['maximum']:,} cenários."
+        messagebox.showinfo("Elite Math", msg)
+        for i, jogo in enumerate(jogos):
+            print(f"Elite: Sugestão {i+1}: {jogo}")
+
+    def solicitar_grafico_frequencia(self):
+        """Inicia o cálculo em thread e renderiza na principal."""
+        def callback(d, f):
+            self.root.after(0, lambda: self.brain._renderizar_grafico_interno(d, f))
+        
+        threading.Thread(target=lambda: self.brain.gerar_grafico_frequencia(callback), daemon=True).start()
 
     def alternar_tema(self):
         self.dark_mode = not self.dark_mode
