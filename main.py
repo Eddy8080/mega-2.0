@@ -4,50 +4,34 @@ import json
 from brain import Brain
 from interface import Interface
 
-
-# Caminho absoluto para o arquivo de configuração
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'config.json')
 
 def carregar_configuracao():
-    """Carrega o token e configurações do arquivo JSON."""
+    if not os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, 'w') as f:
+            json.dump({"GEMINI_API_TOKEN": "INSIRA_SEU_TOKEN_AQUI", "GEMINI_MODEL": "gemini-2.0-flash", "API_DELAY_SECONDS": 2}, f)
+    
     try:
         with open(CONFIG_PATH, 'r') as f:
-            config = json.load(f)
-            return config
-    except FileNotFoundError:
-        print(f"Erro: Arquivo de configuração não encontrado em {CONFIG_PATH}")
-        sys.exit(1)
-    except json.JSONDecodeError:
-        print("Erro: Falha ao ler o arquivo config.json")
-        sys.exit(1)
+            return json.load(f)
+    except:
+        return {"GEMINI_API_TOKEN": "INSIRA_SEU_TOKEN_AQUI", "GEMINI_MODEL": "gemini-2.0-flash", "API_DELAY_SECONDS": 2}
 
 def main():
-    # 1. Inicializar Interface
     interface = Interface()
-
-    # 2. Carregar Configurações
     config = carregar_configuracao()
+    
     token = config.get("GEMINI_API_TOKEN")
     delay = config.get("API_DELAY_SECONDS", 2)
-    
-    if not token or token == "INSIRA_SEU_TOKEN_AQUI":
-        interface.exibir_alerta("Token do Gemini não configurado.")
-        interface.solicitar_token()
-        # Tenta recarregar após a inserção do usuário
-        config = carregar_configuracao()
-        token = config.get("GEMINI_API_TOKEN")
-        if not token or token == "INSIRA_SEU_TOKEN_AQUI":
-            interface.exibir_mensagem("O sistema funcionará apenas com a IA Local por enquanto.")
-    
+
     try:
+        # Inicializa o cérebro (ele lidará internamente se o token é válido ou não)
         sistema_brain = Brain(api_token=token, api_delay=delay)
-        # Conectar o cérebro à interface gráfica
         interface.set_brain(sistema_brain)
     except Exception as e:
-        interface.exibir_alerta(f"Erro crítico ao iniciar o Brain: {e}")
+        print(f"Erro crítico: {e}")
         sys.exit(1)
 
-    # 3. Iniciar Interface Gráfica
     interface.run()
 
 if __name__ == "__main__":

@@ -1,10 +1,12 @@
 import sqlite3
 import os
 
+
 class DatabaseManager:
     """
     Gerencia a conexão com o banco de dados SQLite e a persistência dos sorteios.
     """
+
     def __init__(self, db_name="mega_sena.db"):
         # Define o caminho do banco de dados no mesmo diretório do script
         self.db_path = os.path.join(os.path.dirname(__file__), db_name)
@@ -54,8 +56,9 @@ class DatabaseManager:
     def salvar_sorteio(self, concurso, data, numeros):
         """Salva ou atualiza um sorteio no banco de dados."""
         if len(numeros) != 6:
-            raise ValueError("A lista de números deve conter exatamente 6 dezenas.")
-        
+            raise ValueError(
+                "A lista de números deve conter exatamente 6 dezenas.")
+
         query = """
         INSERT OR REPLACE INTO sorteios (concurso, data_sorteio, bola1, bola2, bola3, bola4, bola5, bola6)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -123,6 +126,14 @@ class DatabaseManager:
             cursor.execute(query)
             conn.commit()
 
+    def limpar_estatisticas_importadas(self):
+        """Remove todas as estatísticas importadas do banco de dados."""
+        query = "DELETE FROM estatisticas_importadas"
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query)
+            conn.commit()
+
     def obter_toda_memoria(self):
         """Retorna todo o conhecimento salvo na memória."""
         query = "SELECT pergunta, resposta FROM memoria_ia"
@@ -142,10 +153,10 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 cursor.execute("PRAGMA integrity_check")
                 result = cursor.fetchone()
-                
+
                 # Garante que as tabelas existem (correção estrutural)
                 self.create_tables()
-                
+
                 if result and result[0] == 'ok':
                     return True, "Integridade do arquivo: OK. Estrutura de tabelas validada."
                 else:
